@@ -63,14 +63,39 @@ ssh -L 9090:127.0.0.1:8080 -N devops
 
 После создания туннеля ресурс доступен по адресу `http://127.0.0.1:9090`.
 
-## 8. Диагностика и восстановление
+## 8. Веб-сервер
+
+- Установлен пакет `nginx` из репозитория Ubuntu.
+- Конфигурация ресурса: `/etc/nginx/sites-available/devops-site`.
+- Ресурс активирован ссылкой `/etc/nginx/sites-enabled/devops-site`; стандартный ресурс отключён.
+- HTTP на порту `80` перенаправляется кодом `301` на HTTPS.
+- HTTPS обслуживается на порту `443` с протоколами TLS 1.2 и TLS 1.3.
+- Каталог ресурса: `/var/www/devops-site`, владелец `devops:devops`.
+- Права каталогов ресурса: `755`; права файлов: `644`.
+- Сертификат: `/etc/ssl/certs/devops.crt`, владелец `root:root`, права `644`.
+- Закрытый ключ: `/etc/ssl/private/devops.key`, владелец `root:root`, права `600`.
+- Сертификат выпущен на 365 дней для `devops.local` с SAN `DNS:devops.local`:
+
+```bash
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /etc/ssl/private/devops.key \
+  -out /etc/ssl/certs/devops.crt \
+  -subj "/CN=devops.local" \
+  -addext "subjectAltName=DNS:devops.local"
+```
+
+- Содержимое доставляется сценарием `scripts/deploy.sh` через `rsync` с правами `D755,F644`.
+- Контрольный снимок после настройки HTTPS: `04-nginx-https`.
+
+## 9. Диагностика и восстановление
 
 1. Проверить синтаксис: `sudo sshd -t`.
 2. Проверить эффективные параметры: `sudo sshd -T`.
 3. Проверить прослушиваемый порт: `sudo ss -tlnp | grep sshd`.
 4. Проверить службу: `sudo systemctl status ssh`.
 5. Проверить firewall: `sudo ufw status verbose`.
-6. Просмотреть журнал: `sudo journalctl -u ssh --no-pager`.
-7. При потере доступа открыть консоль VirtualBox, исправить конфигурацию или восстановить снимок `03-ssh-hardened`.
+6. Проверить Nginx: `sudo nginx -t && systemctl is-active nginx`.
+7. Просмотреть журналы: `sudo journalctl -u ssh --no-pager`, `/var/log/nginx/devops-site.access.log` и `/var/log/nginx/devops-site.error.log`.
+8. При потере доступа открыть консоль VirtualBox, исправить конфигурацию или восстановить снимок `03-ssh-hardened` либо `04-nginx-https`.
 
 Автоматическая проверка основных параметров выполняется скриптом `scripts/audit.sh`.
