@@ -56,5 +56,23 @@ KEY_MODE="$(sudo stat -c '%a' /etc/ssl/private/devops.key 2>/dev/null)"
 check "Файлы сайта защищены, права TLS-ключа равны 600" \
     "safe:600" "${WEB_RIGHTS_STATE}:${KEY_MODE}"
 
+echo "[5] Контейнеризация"
+check "Служба docker активна" \
+    "active" "$(systemctl is-active docker 2>/dev/null)"
+check "Контейнер СУБД находится в состоянии healthy" \
+    "healthy" "$(docker inspect -f '{{.State.Health.Status}}' app-db-1 2>/dev/null)"
+
+CONTAINER_LISTENERS="$(sudo ss -H -tln 2>/dev/null \
+    | awk '{print $4}' \
+    | grep -E ':(5000|5432)$' \
+    | sort -u \
+    | paste -sd, -)"
+check "Порт 5000 доступен только на 127.0.0.1, порт 5432 не опубликован" \
+    "127.0.0.1:5000" "${CONTAINER_LISTENERS}"
+
+ENV_MODE="$(stat -c '%a' "$HOME/app/.env" 2>/dev/null)"
+check "Права файла ~/app/.env равны 600" \
+    "600" "${ENV_MODE}"
+
 echo "Пройдено: $PASS, не пройдено: $FAIL"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

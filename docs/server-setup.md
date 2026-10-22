@@ -87,7 +87,32 @@ sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 - Содержимое доставляется сценарием `scripts/deploy.sh` через `rsync` с правами `D755,F644`.
 - Контрольный снимок после настройки HTTPS: `04-nginx-https`.
 
-## 9. Диагностика и восстановление
+## 9. Контейнеризация
+
+- Docker Engine установлен из официального APT-репозитория Docker для Ubuntu; версия Engine: `29.9.2`, Docker Compose: `v5.6.1`.
+- Пользователь `devops` входит в группы `sudo` и `docker`. Членство в группе `docker` фактически предоставляет административные возможности и разрешено только пользователю с правом `sudo`.
+- Проект приложения расположен на сервере в `/home/devops/app` и доставляется с хоста командой `rsync` с обязательным исключением `--exclude=.env`.
+- Секреты хранятся только на сервере в `/home/devops/app/.env`; владелец `devops:devops`, права `600`. В репозитории находится только шаблон `app/.env.example`.
+- Compose запускает сервисы `app` и `db` в изолированной сети `app_backend`. Приложение находит PostgreSQL по DNS-имени сервиса `db`.
+- Порт приложения опубликован только как `127.0.0.1:5000`; порт PostgreSQL `5432` на хосте не публикуется.
+- Данные PostgreSQL сохраняются в именованном томе `app_db_data`. Команда `docker compose down` сохраняет том, а `docker compose down -v` удаляет его вместе с данными.
+- Приложение работает в контейнере от непривилегированного пользователя `app`.
+- В HTTPS-блоке `/etc/nginx/sites-available/devops-site` настроен обратный прокси:
+
+```nginx
+location /app/ {
+    proxy_pass http://127.0.0.1:5000/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+- Внешний доступ выполняется только через `https://devops.local/app/`; статический ресурс продолжает обслуживаться по `https://devops.local/`.
+- Контрольный снимок после настройки Compose: `05-docker-compose`.
+
+## 10. Диагностика и восстановление
 
 1. Проверить синтаксис: `sudo sshd -t`.
 2. Проверить эффективные параметры: `sudo sshd -T`.
@@ -97,5 +122,9 @@ sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 6. Проверить Nginx: `sudo nginx -t && systemctl is-active nginx`.
 7. Просмотреть журналы: `sudo journalctl -u ssh --no-pager`, `/var/log/nginx/devops-site.access.log` и `/var/log/nginx/devops-site.error.log`.
 8. При потере доступа открыть консоль VirtualBox, исправить конфигурацию или восстановить снимок `03-ssh-hardened` либо `04-nginx-https`.
+9. Проверить контейнеры: `cd ~/app && docker compose ps`.
+10. Проверить журнал приложения: `cd ~/app && docker compose logs app`.
+11. Проверить обратный прокси: `curl --cacert ~/devops.crt https://devops.local/app/health`.
+12. При ответе `502 Bad Gateway` проверить контейнер приложения, сокет `127.0.0.1:5000` и `/var/log/nginx/devops-site.error.log`.
 
 Автоматическая проверка основных параметров выполняется скриптом `scripts/audit.sh`.
