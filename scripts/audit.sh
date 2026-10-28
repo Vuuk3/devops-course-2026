@@ -74,5 +74,24 @@ ENV_MODE="$(stat -c '%a' "$HOME/app/.env" 2>/dev/null)"
 check "Права файла ~/app/.env равны 600" \
     "600" "${ENV_MODE}"
 
+echo "[6] Контрольная работа № 2"
+KR2_PROJECT_DIR="${KR2_PROJECT_DIR:-$HOME/kr2}"
+KR2_REDIS_ID="$(docker compose --project-directory "$KR2_PROJECT_DIR" ps -q redis 2>/dev/null)"
+check "Контейнер Redis находится в состоянии healthy" \
+    "healthy" "$(docker inspect -f '{{.State.Health.Status}}' "$KR2_REDIS_ID" 2>/dev/null)"
+
+check "Порт 8004 опубликован только на 127.0.0.1" \
+    "127.0.0.1:8004" "$(docker compose --project-directory "$KR2_PROJECT_DIR" port app 8004 2>/dev/null)"
+
+check "Права файла ~/kr2/.env равны 600" \
+    "600" "$(stat -c '%a' "$KR2_PROJECT_DIR/.env" 2>/dev/null)"
+
+check "Сертификат kr2 действителен не менее 30 дней" \
+    "0" "$(sudo openssl x509 -checkend 2592000 -noout \
+        -in /etc/ssl/certs/kr2.crt >/dev/null 2>&1; echo $?)"
+
+check "Ресурс kr2 активирован в Nginx" \
+    "active" "$([[ -L /etc/nginx/sites-enabled/kr2 ]] && echo active || echo inactive)"
+
 echo "Пройдено: $PASS, не пройдено: $FAIL"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1
